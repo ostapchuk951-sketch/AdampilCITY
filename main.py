@@ -1,5 +1,5 @@
 import os
-import asyncio
+import asyncio  # Цей імпорт можна залишити, він може знадобитися для інших частин коду
 import json
 from flask import Flask, request
 from telegram import Update, ReplyKeyboardMarkup
@@ -96,7 +96,7 @@ def home():
 
 
 # --- Запуск ---
-async def main():
+def main():  # <-- ЗМІНА 1: Прибираємо async
     app_telegram = (
         ApplicationBuilder()
         .token(TOKEN)
@@ -107,11 +107,14 @@ async def main():
     app_telegram.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_data))
     app_telegram.add_handler(MessageHandler(filters.Regex("^(Так|Ні)$"), handle_reminder_choice))
 
+    # Запускаємо планувальник. Він інтегрується з event loop, який створить run_polling()
     scheduler.start()
     print("✅ Бот запущений")
 
-    await app_telegram.run_polling()
+    # <-- ЗМІНА 2: Прибираємо await. run_polling() сам керує event loop і є блокуючим викликом
+    app_telegram.run_polling()
 
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    # <-- ЗМІНА 3: Запускаємо головну функцію напряму, без asyncio.run()
+    main()
