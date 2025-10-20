@@ -10,7 +10,7 @@ ContextTypes,
 )
 
 
-TOKEN = os.getenv("BOT_TOKEN") # Токен з BotFather
+TOKEN = os.getenv("8108627906:AAEEt8UhqQJPjI9rQe2H8vcTmrVhuudz2z4") # Токен з BotFather
 app = Flask(__name__)
 
 
