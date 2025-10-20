@@ -6,4 +6,4 @@ services:
     startCommand: python main.py
     envVars:
       - key: BOT_TOKEN
-        sync: false  # введеш токен вручну в Render Dashboard
+        sync: false  # додаси токен вручну у Render Dashboard
