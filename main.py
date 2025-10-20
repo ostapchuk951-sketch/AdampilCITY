@@ -1,6 +1,8 @@
 import os
+import asyncio
+import json
 from flask import Flask, request
-from telegram import Update, ReplyKeyboardMarkup
+from telegram import Update, ReplyKeyboardMarkup, Bot
 from telegram.ext import (
 ApplicationBuilder,
 CommandHandler,
@@ -8,16 +10,30 @@ MessageHandler,
 filters,
 ContextTypes,
 )
+from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
 
-TOKEN = os.getenv("8108627906:AAEEt8UhqQJPjI9rQe2H8vcTmrVhuudz2z4") # Токен з BotFather
+TOKEN = os.getenv("BOT_TOKEN") # Токен з BotFather
+USERS_FILE = "users.json"
 app = Flask(__name__)
 
 
-# --- Логіка розрахунку води ---
+# --- Допоміжні функції ---
+def load_users():
+if os.path.exists(USERS_FILE):
+with open(USERS_FILE, 'r', encoding='utf-8') as f:
+return json.load(f)
+return {}
+
+
+def save_users(users):
+with open(USERS_FILE, 'w', encoding='utf-8') as f:
+json.dump(users, f, ensure_ascii=False, indent=2)
+
+
 def calculate_water(weight_kg: float) -> float:
 """Розрахунок потреби у воді: 30 мл на 1 кг ваги"""
-return round(weight_kg * 30 / 1000, 2) # у літрах
+return round(weight_kg * 30 / 1000, 2)
 
 
 # --- Обробники ---
@@ -45,9 +61,7 @@ context.user_data['water'] = water
 context.user_data['reminder'] = False
 
 
-reply_markup = ReplyKeyboardMarkup([
-["Так"], ["Ні"]
-], resize_keyboard=True)
+reply_markup = ReplyKeyboardMarkup([["Так"], ["Ні"]], resize_keyboard=True)
 
 
 await update.message.reply_text(
@@ -57,42 +71,23 @@ reply_markup=reply_markup
 
 
 async def handle_reminder_choice(update: Update, context: ContextTypes.DEFAULT_TYPE):
+user_id = str(update.effective_user.id)
+users = load_users()
+
+
 choice = update.message.text.lower()
 if choice == "так":
-context.user_data['reminder'] = True
+users[user_id] = {
+"chat_id": update.effective_chat.id,
+"reminder": True,
+"water": context.user_data.get('water', 2.0)
+}
+save_users(users)
 await update.message.reply_text("Добре! Я буду нагадувати кожну годину 💧")
 elif choice == "ні":
-context.user_data['reminder'] = False
+users[user_id] = {
+"chat_id": update.effective_chat.id,
+"reminder": False
+}
+save_users(users)
 await update.message.reply_text("Гаразд! Без нагадувань ☀️")
-else:
-await update.message.reply_text("Вибери 'Так' або 'Ні'")
-
-
-# --- Flask webhook ---
-@app.route(f"/{TOKEN}", methods=['POST'])
-def webhook():
-update = Update.de_json(request.get_json(force=True), bot.application.bot)
-bot.application.update_queue.put(update)
-return "OK", 200
-
-
-@app.route('/')
-def index():
-return "Bot is running!"
-
-
-# --- Головний запуск ---
-if __name__ == '__main__':
-from telegram.ext import Application
-
-
-bot = Application.builder().token(TOKEN).build()
-
-
-bot.add_handler(CommandHandler('start', start))
-bot.add_handler(MessageHandler(filters.Regex(r'^\d+\s+\d+$'), handle_data))
-bot.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_reminder_choice))
-
-
-port = int(os.environ.get('PORT', 5000))
-app.run(host='0.0.0.0', port=port)
