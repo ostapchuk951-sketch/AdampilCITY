@@ -146,15 +146,9 @@ async def main() -> None:
     scheduler.start()
     logger.info("Планувальник запущено.")
 
-    # Запуск бота
-    await application.initialize()
-    await application.start()
-    await application.updater.start_polling(drop_pending_updates=True)
-    
     logger.info("✅ Бот запущено!")
-    
-    # <-- ВИПРАВЛЕНО: Викликаємо idle() в об'єкта application
-    await application.idle()
+    # <-- ВИПРАВЛЕНО: Використовуємо простий та надійний метод run_polling()
+    await application.run_polling(drop_pending_updates=True)
 
 
 if __name__ == "__main__":
