@@ -6,7 +6,7 @@ from datetime import datetime
 from flask import Flask
 from telegram import Update, ReplyKeyboardMarkup
 from telegram.ext import (
-    Application, # <-- ЗМІНЕНО: Імпортуємо Application для використання в типі
+    Application,
     CommandHandler,
     MessageHandler,
     filters,
@@ -82,8 +82,8 @@ async def handle_reminder_choice(update: Update, context: ContextTypes.DEFAULT_T
         await update.message.reply_text("Гаразд! Без нагадувань ☀️")
 
 
-# --- Функція для нагадувань (ВИПРАВЛЕНО) ---
-async def send_reminder(application: Application): # <-- ЗМІНЕНО: Приймаємо application
+# --- Функція для нагадувань ---
+async def send_reminder(application: Application):
     """Ця функція буде викликатися планувальником для надсилання нагадувань."""
     logger.info("Запуск щогодинного нагадування...")
     users = load_users()
@@ -95,7 +95,6 @@ async def send_reminder(application: Application): # <-- ЗМІНЕНО: При�
             chat_id = data["chat_id"]
             water_amount = data.get("water", 2.0)
             try:
-                # <-- ЗМІНЕНО: Використовуємо application.bot замість context.bot
                 await application.bot.send_message(
                     chat_id=chat_id,
                     text=f"💧 Нагадування! Не забудь випити води. Твоя норма на сьогодні: {water_amount} л."
@@ -136,11 +135,10 @@ async def main() -> None:
     application.add_error_handler(error_handler)
 
     # Налаштування планувальника
-    # <-- ЗМІНЕНО: Передаємо об'єкт 'application' у функцію через kwargs
     scheduler.add_job(
         send_reminder,
         CronTrigger(minute=0),
-        kwargs={'application': application}, # Ось ключова зміна
+        kwargs={'application': application},
         id="hourly_reminder",
         name="Щогодинне нагадування про воду",
         replace_existing=True,
@@ -155,7 +153,8 @@ async def main() -> None:
     
     logger.info("✅ Бот запущено!")
     
-    await application.updater.idle()
+    # <-- ВИПРАВЛЕНО: Викликаємо idle() в об'єкта application
+    await application.idle()
 
 
 if __name__ == "__main__":
