@@ -116,8 +116,8 @@ def home():
     return "Бот працює!"
 
 
-# --- Головна функція запуску ---
-async def main() -> None:
+# --- Головна функція запуску (ВИПРАВЛЕНО) ---
+def main(): # <-- ЗМІНЕНО: Функція знову синхронна
     """Налаштування та запуск бота."""
     if not TOKEN:
         logger.error("Помилка: BOT_TOKEN не знайдено у змінних середовища!")
@@ -147,8 +147,8 @@ async def main() -> None:
     logger.info("Планувальник запущено.")
 
     logger.info("✅ Бот запущено!")
-    # <-- ВИПРАВЛЕНО: Використовуємо простий та надійний метод run_polling()
-    await application.run_polling(drop_pending_updates=True)
+    # <-- ЗМІНЕНО: Викликаємо run_polling без await. Це блокуючий виклик.
+    application.run_polling(drop_pending_updates=True)
 
 
 if __name__ == "__main__":
@@ -161,7 +161,5 @@ if __name__ == "__main__":
     flask_thread = Thread(target=run_flask, daemon=True)
     flask_thread.start()
     
-    try:
-        asyncio.run(main())
-    except (KeyboardInterrupt, SystemExit):
-        logger.info("Бот зупинено.")
+    # <-- ЗМІНЕНО: Просто викликаємо синхронну функцію main()
+    main()
