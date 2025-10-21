@@ -6,18 +6,16 @@ from datetime import datetime
 from flask import Flask
 from telegram import Update, ReplyKeyboardMarkup
 from telegram.ext import (
-    Application,
+    Application, # <-- ЗМІНЕНО: Імпортуємо Application для використання в типі
     CommandHandler,
     MessageHandler,
     filters,
     ContextTypes,
-    ApplicationHandlerStop,
 )
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
 
 # === НАЛАШТУВАННЯ ЛОГІВ ===
-# Це допоможе відстежувати помилки та роботу бота
 logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s", level=logging.INFO
 )
@@ -28,7 +26,7 @@ logger = logging.getLogger(__name__)
 TOKEN = os.getenv("BOT_TOKEN")
 USERS_FILE = "users.json"
 app = Flask(__name__)
-scheduler = AsyncIOScheduler(timezone="Europe/Kyiv") # Вказуємо часову зону
+scheduler = AsyncIOScheduler(timezone="Europe/Kyiv")
 
 
 # --- Допоміжні функції ---
@@ -68,7 +66,6 @@ async def handle_reminder_choice(update: Update, context: ContextTypes.DEFAULT_T
     users = load_users()
     choice = update.message.text.lower()
     if choice == "так":
-        # Зберігаємо дані користувача у файл
         users[user_id] = {
             "chat_id": update.effective_chat.id,
             "reminder": True,
@@ -85,8 +82,8 @@ async def handle_reminder_choice(update: Update, context: ContextTypes.DEFAULT_T
         await update.message.reply_text("Гаразд! Без нагадувань ☀️")
 
 
-# --- Функція для нагадувань ---
-async def send_reminder(context: ContextTypes.DEFAULT_TYPE):
+# --- Функція для нагадувань (ВИПРАВЛЕНО) ---
+async def send_reminder(application: Application): # <-- ЗМІНЕНО: Приймаємо application
     """Ця функція буде викликатися планувальником для надсилання нагадувань."""
     logger.info("Запуск щогодинного нагадування...")
     users = load_users()
@@ -98,7 +95,8 @@ async def send_reminder(context: ContextTypes.DEFAULT_TYPE):
             chat_id = data["chat_id"]
             water_amount = data.get("water", 2.0)
             try:
-                await context.bot.send_message(
+                # <-- ЗМІНЕНО: Використовуємо application.bot замість context.bot
+                await application.bot.send_message(
                     chat_id=chat_id,
                     text=f"💧 Нагадування! Не забудь випити води. Твоя норма на сьогодні: {water_amount} л."
                 )
@@ -138,10 +136,11 @@ async def main() -> None:
     application.add_error_handler(error_handler)
 
     # Налаштування планувальника
-    # Використовуємо CronTrigger для запуску на початку кожної години (напр. 13:00, 14:00)
+    # <-- ЗМІНЕНО: Передаємо об'єкт 'application' у функцію через kwargs
     scheduler.add_job(
         send_reminder,
-        CronTrigger(minute=0),  # Запускати кожну годину на 0-й хвилині
+        CronTrigger(minute=0),
+        kwargs={'application': application}, # Ось ключова зміна
         id="hourly_reminder",
         name="Щогодинне нагадування про воду",
         replace_existing=True,
@@ -150,19 +149,16 @@ async def main() -> None:
     logger.info("Планувальник запущено.")
 
     # Запуск бота
-    # Ініціалізація, запуск поллінгу, а потім утримання програми активною
     await application.initialize()
     await application.start()
-    await application.updater.start_polling(drop_pending_updates=True) # drop_pending_updates - добре для перезапусків
+    await application.updater.start_polling(drop_pending_updates=True)
     
     logger.info("✅ Бот запущено!")
     
-    # Цей рядок утримує програму працюючою, доки її не зупинять вручну
     await application.updater.idle()
 
 
 if __name__ == "__main__":
-    # Запускаємо Flask у фоновому потоці для Render
     from threading import Thread
     
     def run_flask():
@@ -172,7 +168,6 @@ if __name__ == "__main__":
     flask_thread = Thread(target=run_flask, daemon=True)
     flask_thread.start()
     
-    # Запускаємо основну асинхронну функцію бота
     try:
         asyncio.run(main())
     except (KeyboardInterrupt, SystemExit):
