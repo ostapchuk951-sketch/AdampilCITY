@@ -74,10 +74,10 @@ async def handle_reminder_choice(update: Update, context: ContextTypes.DEFAULT_T
         save_users(users)
         await update.message.reply_text("Добре! Я буду нагадувати кожну годину 💧")
     elif choice == "ні":
-        users[user_id] = {
-            "chat_id": update.effective_chat.id,
-            "reminder": False
-        }
+        if user_id in users:
+            users[user_id]["reminder"] = False
+        else:
+            users[user_id] = {"reminder": False}
         save_users(users)
         await update.message.reply_text("Гаразд! Без нагадувань ☀️")
 
@@ -116,8 +116,8 @@ def home():
     return "Бот працює!"
 
 
-# --- Головна функція запуску (ВИПРАВЛЕНО) ---
-def main(): # <-- ЗМІНЕНО: Функція знову синхронна
+# --- Головна функція запуску ---
+async def main():
     """Налаштування та запуск бота."""
     if not TOKEN:
         logger.error("Помилка: BOT_TOKEN не знайдено у змінних середовища!")
@@ -135,31 +135,41 @@ def main(): # <-- ЗМІНЕНО: Функція знову синхронна
     application.add_error_handler(error_handler)
 
     # Налаштування планувальника
+    # Передаємо сам застосунок (application) до функції нагадування
     scheduler.add_job(
         send_reminder,
-        CronTrigger(minute=0),
+        CronTrigger(minute=0),  # Запуск на початку кожної години
         kwargs={'application': application},
         id="hourly_reminder",
         name="Щогодинне нагадування про воду",
         replace_existing=True,
     )
+    
+    # Запускаємо планувальник
     scheduler.start()
     logger.info("Планувальник запущено.")
 
-    logger.info("✅ Бот запущено!")
-    # <-- ЗМІНЕНО: Викликаємо run_polling без await. Це блокуючий виклик.
-    application.run_polling(drop_pending_updates=True)
+    # Запускаємо бота в режимі polling
+    # Це блокуючий виклик, який буде працювати, доки програму не зупинять
+    await application.run_polling(drop_pending_updates=True)
 
 
 if __name__ == "__main__":
     from threading import Thread
     
     def run_flask():
+        # Запускаємо Flask сервер у окремому потоці
         port = int(os.environ.get('PORT', 10000))
         app.run(host='0.0.0.0', port=port)
 
+    # Запускаємо Flask сервер як фоновий процес (daemon=True)
     flask_thread = Thread(target=run_flask, daemon=True)
     flask_thread.start()
     
-    # <-- ЗМІНЕНО: Просто викликаємо синхронну функцію main()
-    main()
+    # Запускаємо головну асинхронну функцію бота
+    try:
+        asyncio.run(main())
+    except (KeyboardInterrupt, SystemExit):
+        # При натисканні Ctrl+C коректно зупиняємо планувальник
+        logger.info("Зупинка бота...")
+        scheduler.shutdown()
