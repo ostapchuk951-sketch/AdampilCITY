@@ -29,9 +29,6 @@ PORT = int(os.environ.get('PORT', 10000))
 # Flask-додаток
 app = Flask(__name__)
 
-# Планувальник
-scheduler = AsyncIOScheduler(timezone="Europe/Kyiv")
-
 
 # --- Допоміжні функції ---
 def load_users():
@@ -120,16 +117,46 @@ def home():
 
 
 # ==============================================================================
-# ======================== НОВИЙ, ПРАВИЛЬНИЙ ПІДХІД ============================
+# ======================== НОВИЙ, БІЛЬШ НАДІЙНИЙ ПІДХІД =========================
 # ==============================================================================
+
+async def post_init(application: Application) -> None:
+    """
+    Ця функція буде викликана після того, як додаток ініціалізується
+    і event loop запуститься. Це найкраще місце для запуску планувальника.
+    """
+    logger.info("post_init: Починаємо налаштування планувальника...")
+    
+    # Створюємо екземпляр планувальника
+    app_scheduler = AsyncIOScheduler(timezone="Europe/Kyiv")
+    
+    # Налаштовуємо завдання
+    app_scheduler.add_job(
+        send_reminder,
+        CronTrigger(minute=0),
+        kwargs={'application': application},
+        id="hourly_reminder",
+        name="Щогодинне нагадування про воду",
+        replace_existing=True,
+    )
+    
+    # Запускаємо планувальник
+    app_scheduler.start()
+    logger.info("post_init: Планувальник успішно запущено.")
+    
+    # Зберігаємо планувальник в об'єкті application, щоб він не був зібраний сміттєзбирачем
+    application.scheduler = app_scheduler
+
+
 def main():
     """Головна функція для налаштування та запуску бота."""
     if not TOKEN:
         logger.error("Помилка: BOT_TOKEN не знайдено!")
         return
 
-    # Створення додатку
-    application = Application.builder().token(TOKEN).build()
+    logger.info("Створення Application...")
+    # Використовуємо .post_init() для реєстрації нашої функції
+    application = Application.builder().token(TOKEN).post_init(post_init).build()
 
     # Додавання обробників
     application.add_handler(CommandHandler("start", start))
@@ -137,34 +164,15 @@ def main():
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_data))
     application.add_error_handler(error_handler)
 
-    # Налаштування планувальника
-    # Передаємо об'єкт 'application' в функцію send_reminder через kwargs
-    scheduler.add_job(
-        send_reminder,
-        CronTrigger(minute=0),  # Запуск на початку кожної години
-        kwargs={'application': application},
-        id="hourly_reminder",
-        name="Щогодинне нагадування про воду",
-        replace_existing=True,
-    )
-    
-    # Запускаємо планувальник.
-    # На цьому моменті event loop ще не створено, але scheduler буде готовий
-    # і автоматично підключиться до нього, коли run_polling його створить.
-    scheduler.start()
-    logger.info("Планувальник запущено.")
-
-    # Запускаємо бота в режимі polling.
-    # Цей виклик є блокуючим. Він створить event loop, запустить в ньому
-    # планувальник і роботу бота, і буде працювати, доки його не зупинять.
-    logger.info("✅ Бот запущено!")
+    logger.info("Всі обробники додано. Запускаємо polling...")
+    # Запускаємо бота. Цей виклик є блокуючим.
     application.run_polling(drop_pending_updates=True)
+    logger.info("run_polling() завершив роботу.")
 
 
 # --- Блок запуску ---
 if __name__ == "__main__":
     # Створюємо і запускаємо потік для Flask-сервера
-    # Це потрібно, щоб Render вважав застосунок активним
     logger.info("Запуск веб-сервера для heartbeat у фоновому потоці...")
     flask_thread = Thread(target=app.run, kwargs={'host': '0.0.0.0', 'port': PORT})
     flask_thread.daemon = True
@@ -175,3 +183,5 @@ if __name__ == "__main__":
         main()
     except (KeyboardInterrupt, SystemExit):
         logger.info("Програма завершена користувачем або системою.")
+    except Exception as e:
+        logger.error(f"Сталася непередбачена помилка в main(): {e}", exc_info=True)
