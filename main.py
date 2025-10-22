@@ -2,7 +2,7 @@ import os
 import asyncio
 import json
 import logging
-from datetime import datetime
+from threading import Thread
 from flask import Flask
 from telegram import Update, ReplyKeyboardMarkup
 from telegram.ext import (
@@ -21,11 +21,15 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-
 # === КОНСТАНТИ ===
 TOKEN = os.getenv("BOT_TOKEN")
 USERS_FILE = "users.json"
+PORT = int(os.environ.get('PORT', 10000))
+
+# Flask-додаток
 app = Flask(__name__)
+
+# Планувальник
 scheduler = AsyncIOScheduler(timezone="Europe/Kyiv")
 
 
@@ -57,7 +61,6 @@ async def handle_data(update: Update, context: ContextTypes.DEFAULT_TYPE):
     height, weight = map(float, parts)
     water = calculate_water(weight)
     context.user_data['water'] = water
-    context.user_data['reminder'] = False
     reply_markup = ReplyKeyboardMarkup([["Так"], ["Ні"]], resize_keyboard=True)
     await update.message.reply_text(f"Тобі потрібно пити близько {water} л води на день. 💦\nНагадувати про воду?", reply_markup=reply_markup)
 
@@ -116,11 +119,11 @@ def home():
     return "Бот працює!"
 
 
-# --- Головна функція запуску ---
-async def main():
+# --- Головна функція запуску бота ---
+async def run_bot():
     """Налаштування та запуск бота."""
     if not TOKEN:
-        logger.error("Помилка: BOT_TOKEN не знайдено у змінних середовища!")
+        logger.error("Помилка: BOT_TOKEN не знайдено!")
         return
 
     # Створення додатку
@@ -130,12 +133,9 @@ async def main():
     application.add_handler(CommandHandler("start", start))
     application.add_handler(MessageHandler(filters.Regex("^(Так|Ні)$"), handle_reminder_choice))
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_data))
-    
-    # Додавання обробника помилок
     application.add_error_handler(error_handler)
 
     # Налаштування планувальника
-    # Передаємо сам застосунок (application) до функції нагадування
     scheduler.add_job(
         send_reminder,
         CronTrigger(minute=0),  # Запуск на початку кожної години
@@ -151,25 +151,22 @@ async def main():
 
     # Запускаємо бота в режимі polling
     # Це блокуючий виклик, який буде працювати, доки програму не зупинять
+    logger.info("✅ Бот запущено!")
     await application.run_polling(drop_pending_updates=True)
 
 
+# --- Блок запуску (ВИПРАВЛЕНО) ---
 if __name__ == "__main__":
-    from threading import Thread
-    
-    def run_flask():
-        # Запускаємо Flask сервер у окремому потоці
-        port = int(os.environ.get('PORT', 10000))
-        app.run(host='0.0.0.0', port=port)
-
-    # Запускаємо Flask сервер як фоновий процес (daemon=True)
-    flask_thread = Thread(target=run_flask, daemon=True)
+    # Створюємо і запускаємо потік для Flask-сервера
+    # Це потрібно, щоб Render вважав застосунок активним
+    flask_thread = Thread(target=app.run, kwargs={'host': '0.0.0.0', 'port': PORT})
     flask_thread.start()
-    
-    # Запускаємо головну асинхронну функцію бота
-    try:
-        asyncio.run(main())
-    except (KeyboardInterrupt, SystemExit):
-        # При натисканні Ctrl+C коректно зупиняємо планувальник
-        logger.info("Зупинка бота...")
-        scheduler.shutdown()
+
+    # Створюємо і запускаємо потік для Telegram-бота
+    # Це вирішує проблему з event loop
+    bot_thread = Thread(target=asyncio.run, args=(run_bot(),))
+    bot_thread.start()
+
+    # Чекаємо, поки потік бота завершиться (що не станеться, доки його не зупинять)
+    # Це потрібно, щоб основний скрипт не закрився одразу після запуску потоків
+    bot_thread.join()
