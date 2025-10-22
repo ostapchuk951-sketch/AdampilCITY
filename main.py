@@ -29,6 +29,11 @@ PORT = int(os.environ.get('PORT', 10000))
 # Flask-додаток
 app = Flask(__name__)
 
+# Глобальний екземпляр планувальника.
+# Ми створюємо його тут, щоб він не був видалений сміттєзбирачем
+# після завершення функції post_init.
+scheduler = AsyncIOScheduler(timezone="Europe/Kyiv")
+
 
 # --- Допоміжні функції ---
 def load_users():
@@ -117,7 +122,7 @@ def home():
 
 
 # ==============================================================================
-# ======================== НОВИЙ, БІЛЬШ НАДІЙНИЙ ПІДХІД =========================
+# ======================== ФІНАЛЬНИЙ, ПРАВИЛЬНИЙ ПІДХІД =========================
 # ==============================================================================
 
 async def post_init(application: Application) -> None:
@@ -127,11 +132,10 @@ async def post_init(application: Application) -> None:
     """
     logger.info("post_init: Починаємо налаштування планувальника...")
     
-    # Створюємо екземпляр планувальника
-    app_scheduler = AsyncIOScheduler(timezone="Europe/Kyiv")
+    # Використовуємо глобальний екземпляр планувальника
     
     # Налаштовуємо завдання
-    app_scheduler.add_job(
+    scheduler.add_job(
         send_reminder,
         CronTrigger(minute=0),
         kwargs={'application': application},
@@ -141,11 +145,8 @@ async def post_init(application: Application) -> None:
     )
     
     # Запускаємо планувальник
-    app_scheduler.start()
+    scheduler.start()
     logger.info("post_init: Планувальник успішно запущено.")
-    
-    # Зберігаємо планувальник в об'єкті application, щоб він не був зібраний сміттєзбирачем
-    application.scheduler = app_scheduler
 
 
 def main():
@@ -185,3 +186,4 @@ if __name__ == "__main__":
         logger.info("Програма завершена користувачем або системою.")
     except Exception as e:
         logger.error(f"Сталася непередбачена помилка в main(): {e}", exc_info=True)
+        
